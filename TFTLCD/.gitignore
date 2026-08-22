@@ -1,0 +1,20 @@
+# Build outputs
+build/
+cmake-build-*/
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.log
+
+# Editor / IDE temporary files
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local GitHub token (never commit)
+.github_token

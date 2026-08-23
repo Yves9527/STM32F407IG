@@ -15,6 +15,10 @@
             ],
             "runToEntryPoint": "main",
             "showDevDebugOutput": "none",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            },
             "openOCDLaunchCommands": [
                 "stm32f4x.cpu configure -event gdb-detach { resume }"
             ]

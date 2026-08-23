@@ -20,6 +20,8 @@
                 "samplesPerSecond": 4
             },
             "openOCDLaunchCommands": [
+                "adapter speed 10000",
+                "reset_config none",
                 "stm32f4x.cpu configure -event gdb-detach { resume }"
             ]
         }

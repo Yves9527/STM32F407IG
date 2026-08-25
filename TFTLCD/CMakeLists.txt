@@ -58,48 +58,22 @@ include_directories(
     Drivers/CMSIS/Device/ST/STM32F4xx/Include
     Drivers/CMSIS/Include
     Drivers/STM32F4xx_HAL_Driver/Inc
-    Drivers/SYSTEM/delay
-    Drivers/SYSTEM/sys
-    Drivers/SYSTEM/usart
-    Drivers/BSP/LED
-    Drivers/BSP/LCD
+    
 )
 
 # 1. User 源文件
-set(USER_SRCS
-    User/main.c
-    User/stm32f4xx_it.c
-)
+file(GLOB_RECURSE USER_SRCS "User/*.c")
 
 # 2. SYSTEM 源文件
-set(SYSTEM_SRCS
-    Drivers/SYSTEM/delay/delay.c
-    Drivers/SYSTEM/sys/sys.c
-    Drivers/SYSTEM/usart/usart.c
-)
+file(GLOB_RECURSE SYSTEM_SRCS "Drivers/SYSTEM/*.c")
 
-# 3. BSP 源文件
-set(BSP_SRCS
-    Drivers/BSP/LED/led.c
-    Drivers/BSP/LCD/lcd.c
-)
+# 3. BSP 源文件（自动排除被 lcd.c 内部引用的 lcd_ex.c）
+file(GLOB_RECURSE BSP_SRCS "Drivers/BSP/*.c")
+list(FILTER BSP_SRCS EXCLUDE REGEX ".*lcd_ex\\.c$")
 
-# 4. 精确对齐原 Keil 工程引用的 HAL/LL 驱动文件
-set(HAL_SRCS
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_usart.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_sram.c
-    Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fsmc.c
-)
+# 4. HAL 库源文件（自动排除冲突的 *_template.c 模板文件）
+file(GLOB_RECURSE HAL_SRCS "Drivers/STM32F4xx_HAL_Driver/Src/*.c")
+list(FILTER HAL_SRCS EXCLUDE REGEX ".*_template\\.c$")
 
 # 5. 启动文件与系统初始化
 set(STARTUP_SRCS

@@ -8,14 +8,14 @@
 
 ## 🛠️ 硬件平台特性
 
-* **主控芯片**：STM32F407IGT6（Cortex-M4F 内核，主频 168MHz，1024KB Flash，192KB SRAM）[cite: 1]
+* **主控芯片**：STM32F407IGT6（Cortex-M4F 内核，主频 168MHz，1024KB Flash，192KB SRAM）
 * **电机接口**：
-  * 2 路全功能直流有刷 / 无刷驱动器接口（支持双路 FOC）[cite: 1]
-  * 4 路光耦隔离步进电机驱动器接口[cite: 1]
-  * 3 路带电平转换舵机接口[cite: 1]
-  * 2 路独立编码器接口[cite: 1]
-* **工业通信**：CAN 总线、RS485、RS232、以太网（LAN8720A / RMII）[cite: 1]
-* **存储外设**：16MB SPI Flash、2Kb EEPROM、TFT-LCD 接口（FSMC）[cite: 1]
+  * 2 路全功能直流有刷 / 无刷驱动器接口（支持双路 FOC）
+  * 4 路光耦隔离步进电机驱动器接口
+  * 3 路带电平转换舵机接口
+  * 2 路独立编码器接口
+* **工业通信**：CAN 总线、RS485、RS232、以太网（LAN8720A / RMII）
+* **存储外设**：16MB SPI Flash、2Kb EEPROM、TFT-LCD 接口（FSMC）
 
 ---
 

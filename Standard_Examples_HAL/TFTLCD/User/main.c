@@ -35,7 +35,8 @@ int main(void)
     usart_init(115200);                 /* 串口初始化为115200 */
     led_init();                         /* 初始化LED */
     lcd_init();                         /* 初始化LCD */
-    g_point_color = RED;
+    g_point_color = BLACK;
+    lcd_display_dir(1);                                /* 设置屏幕显示方向为横屏 */
     sprintf((char *)lcd_id, "LCD ID:%04X", lcddev.id); /* 将LCD ID打印到lcd_id数组 */
 
     while (1)

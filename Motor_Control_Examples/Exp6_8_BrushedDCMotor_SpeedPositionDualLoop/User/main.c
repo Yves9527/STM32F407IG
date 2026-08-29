@@ -46,7 +46,6 @@ typedef enum
 {
     MOTOR_FSM_IDLE = 0,             /* 空闲/待机：PID闭环不使能，等待启动命令 */
     MOTOR_FSM_RUN,                  /* 运行：位置环+速度环双闭环使能 */
-    MOTOR_FSM_BRAKE,                /* 刹车：关闭电机输出 */
 } motor_fsm_state_t;
 
 static motor_fsm_state_t g_motor_fsm = MOTOR_FSM_IDLE;   /* 当前状态机状态 */
@@ -205,17 +204,6 @@ int main(void)
                 else if (key == KEY2_PRES)                  /* 停止：回到初始位置0 */
                 {
                     fsm_return_zero();
-                }
-                break;
-
-            case MOTOR_FSM_BRAKE:                           /* 刹车状态 */
-                if (key == KEY0_PRES)                       /* 重新启动，正转一圈 */
-                {
-                    fsm_run_step(LOC_STEP_ONCE);
-                }
-                else if (key == KEY1_PRES)                  /* 重新启动，反转一圈 */
-                {
-                    fsm_run_step(-LOC_STEP_ONCE);
                 }
                 break;
 

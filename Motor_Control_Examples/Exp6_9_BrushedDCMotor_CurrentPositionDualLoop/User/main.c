@@ -76,41 +76,39 @@ int main(void)
     while (1)
     {
         key = key_scan(0);                                  /* 按键扫描 */
-        if(key == KEY0_PRES)                                /* 当key0按下 */
+        switch (key)
         {
-            g_run_flag = 1;                                 /* 标记电机启动 */
-            dcmotor_start();                                /* 开启电机 */
-            g_location_pid.SetPoint += 1320;                /* 正转一圈，电机旋转圈数 = 编码器总计数值 / 44 / 30 */
-            
-            if (g_location_pid.SetPoint >= 6600)            /* 限制电机位置（正转最大5圈） */
-            {
-                g_location_pid.SetPoint = 6600;
-            }
+            case KEY0_PRES:                                 /* 当key0按下 */
+                g_run_flag = 1;                              /* 标记电机启动 */
+                dcmotor_start();                             /* 开启电机 */
+                g_location_pid.SetPoint += 1320;             /* 正转一圈，电机旋转圈数 = 编码器总计数值 / 44 / 30 */
+                
+                if (g_location_pid.SetPoint >= 6600)         /* 限制电机位置（正转最大5圈） */
+                {
+                    g_location_pid.SetPoint = 6600;
+                }
 #if DEBUG_ENABLE
-            debug_send_motorstate(RUN_STATE);               /* 上传电机状态（运行） */
+                debug_send_motorstate(RUN_STATE); /* 上传电机状态（运行） */
 #endif
+                break;
+            case KEY1_PRES:                                 /* 当key1按下 */
+                g_run_flag = 1;                              /* 标记电机启动 */
+                dcmotor_start();                             /* 开启电机 */
+                g_location_pid.SetPoint -= 1320;             /* 反转一圈 */
+                
+                if (g_location_pid.SetPoint <= -6600)        /* 限制电机位置（反转最大5圈） */
+                {
+                    g_location_pid.SetPoint = -6600;
+                }
+#if DEBUG_ENABLE
+                debug_send_motorstate(RUN_STATE); /* 上传电机状态（运行） */
+#endif
+                break; 
+            case KEY2_PRES:                                 /* 当key2按下 */
+                g_location_pid.SetPoint = 0;                 /* 恢复初始位置 */
+                break;
         }
         
-        else if(key == KEY1_PRES)                           /* 当key1按下 */
-        {
-            g_run_flag = 1;                                 /* 标记电机启动 */
-            dcmotor_start();                                /* 开启电机 */
-            g_location_pid.SetPoint -= 1320;                /* 反转一圈 */
-            
-            if (g_location_pid.SetPoint <= -6600)           /* 限制电机位置（反转最大5圈） */
-            {
-                g_location_pid.SetPoint = -6600;
-            }
-#if DEBUG_ENABLE
-            debug_send_motorstate(RUN_STATE);               /* 上传电机状态（运行） */
-#endif
-        }
-        
-        else if(key == KEY2_PRES)                           /* 当key2按下 */
-        {
-            g_location_pid.SetPoint = 0;                    /* 恢复初始位置 */
-        }
-
 #if DEBUG_ENABLE
 
         /* 接收PID助手设置的位置环PID参数 */

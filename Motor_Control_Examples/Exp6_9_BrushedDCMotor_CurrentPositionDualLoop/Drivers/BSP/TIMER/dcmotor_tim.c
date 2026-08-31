@@ -29,6 +29,10 @@
 #include "./DEBUG/debug.h"
 
 /******************************* µÚÒ»²¿·Ö  µç»ú»ù±¾Çý¶¯ »¥²¹Êä³ö´øËÀÇø¿ØÖÆ **************************************/
+/* µç»ú¿ØÖÆ²ÎÊýÏÞÖÆÓëÖÜÆÚ¶¨Òå */
+#define MOTOR_SPEED_CALC_PERIOD_MS    5       /* ËÙ¶È¼ÆËã²ÉÑùÖÜÆÚ: 5ms */
+#define MOTOR_MAX_TARGET_CURRENT        120.0f  /* Î»ÖÃ»·Êä³öÏÞ·ù£¨Ä¿±êµçÁ÷×î´óÖµ£© */
+#define MOTOR_MAX_PWM_DUTY            8200.0f /* ËÙ¶È»·Êä³öÏÞ·ù£¨PWMÕ¼¿Õ±È×î´óÖµ£© */
 
 
 /* ¶¨Ê±Æ÷ÅäÖÃ¾ä±ú ¶¨Òå */
@@ -271,6 +275,79 @@ volatile int g_timx_encode_count = 0;                                   /* Òç³ö´
 uint8_t  g_run_flag = 0;                                                /* µç»úÆôÍ£×´Ì¬±êÖ¾£¬0£ºÍ£Ö¹£¬1£ºÆô¶¯ */
 
 /**
+ * @brief       ÊýÖµÏÞ·ù¸¨Öúº¯Êý
+ * @param       val: ´ýÏÞ·ùÊýÖµ
+ * @param       min: ×îÐ¡Öµ
+ * @param       max: ×î´óÖµ
+ * @retval      ÏÞ·ùºó½á¹û
+ */
+static inline float math_clamp(float val, float min, float max)
+{
+    if (val > max) return max;
+    if (val < min) return min;
+    return val;
+}
+
+/**
+ * @brief       ¸ù¾ÝÍâ»·Êä³öÈ·¶¨×ªÏò²¢ÌáÈ¡µ¥¼«ÐÔÄ¿±êµçÁ÷
+ * @param       loc_out: Î»ÖÃ»·Ô­Ê¼Êä³ö (º¬Õý¸ººÅ)
+ * @retval      µ¥¼«ÐÔÄ¿±êµçÁ÷·ùÖµ (>= 0)
+ */
+static inline float motor_update_dir_and_get_target_current(float loc_out)
+{
+    if (loc_out >= 0.0f)
+    {
+        dcmotor_dir(0);                     /* Ä¿±êÎªÕý£¬ÉèÖÃµç»úÕý×ª */
+        return loc_out;
+    }
+    else
+    {
+        dcmotor_dir(1);                     /* Ä¿±êÎª¸º£¬ÉèÖÃµç»ú·´×ª */
+        return -loc_out;                    /* È¡¾ø¶ÔÖµ×÷ÎªµçÁ÷Ä¿±ê·ùÖµ */
+    }
+}
+
+/**
+ * @brief       Î»ÖÃ+ËÙ¶ÈË«»· PID ¿ØÖÆ¼ÆËã
+ * @param       ÎÞ
+ * @retval      ÎÞ
+ */
+static void motor_dual_loop_control_step(void)
+{
+    if (g_run_flag)                                             /* ÅÐ¶Ïµç»úÊÇ·ñÆô¶¯ÁË */
+    { 
+        float raw_current_target;
+        float current_target_clamped;
+
+        /* 1. Î»ÖÃ»·PID¿ØÖÆ£¨Íâ»·£© */
+        raw_current_target = increment_pid_ctrl(&g_location_pid, g_motor_data.location);
+        
+        /* 2. ÅÐ¶ÏÕý¸ººÅÉèÖÃµç»ú×ªÏò£¬²¢ÌáÈ¡Ä¿±êµçÁ÷¾ø¶ÔÖµ */
+        current_target_clamped = motor_update_dir_and_get_target_current(raw_current_target);
+
+        /* 3. ÏÞÖÆÍâ»·Êä³ö£¨µ¥¼«ÐÔµçÁ÷ÉÏÏÞÏÞ·ù: 0 ~ 120£© */
+        current_target_clamped = math_clamp(current_target_clamped, 0.0f, MOTOR_MAX_TARGET_CURRENT);
+        g_current_pid.SetPoint = current_target_clamped;
+        
+        /* 4. µçÁ÷»·PID¿ØÖÆ£¨ÄÚ»·£© */
+        g_motor_data.motor_pwm = increment_pid_ctrl(&g_current_pid, g_motor_data.current);
+        
+        /* 5. ÏÞÖÆPWMÕ¼¿Õ±ÈÊä³ö£¨µ¥¼«ÐÔÕ¼¿Õ±ÈÏÞ·ù: 0 ~ 8200£© */
+        g_motor_data.motor_pwm = math_clamp(g_motor_data.motor_pwm, 0.0f, MOTOR_MAX_PWM_DUTY);
+
+#if DEBUG_ENABLE  /* ·¢ËÍ»ù±¾²ÎÊý */
+        debug_send_wave_data(1, g_motor_data.location);         /* Ñ¡ÔñÍ¨µÀ1£¬·¢ËÍÊµ¼ÊÎ»ÖÃ£¨²¨ÐÎÏÔÊ¾£© */
+        debug_send_wave_data(2, g_location_pid.SetPoint);       /* Ñ¡ÔñÍ¨µÀ2£¬·¢ËÍÄ¿±êÎ»ÖÃ£¨²¨ÐÎÏÔÊ¾£© */
+#endif
+        /* 6. Êä³öÕ¼¿Õ±Èµ½Ó²¼þÇý¶¯ */
+        dcmotor_speed((uint16_t)g_motor_data.motor_pwm);
+    }
+    else
+    {
+        dcmotor_speed(0);                                       /* Í£Ö¹Êä³ö */
+    }
+}
+/**
  * @brief       ¶¨Ê±Æ÷¸üÐÂÖÐ¶Ï»Øµ÷º¯Êý
  * @param        htim:¶¨Ê±Æ÷¾ä±úÖ¸Õë
  * @note        ´Ëº¯Êý»á±»¶¨Ê±Æ÷ÖÐ¶Ïº¯Êý¹²Í¬µ÷ÓÃµÄ
@@ -293,56 +370,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
      }
      else if (htim->Instance == TIM6)
      {
-        int Encode_now = gtim_get_encode();                             /* »ñÈ¡±àÂëÆ÷Öµ£¬ÓÃÓÚ¼ÆËãËÙ¶È */
+        static uint8_t val = 0;
+        int encode_now = gtim_get_encode(); /* »ñÈ¡µ±Ç°±àÂëÆ÷¼ÆÊýÖµ */
 
-        speed_computer(Encode_now, 5);                                  /* ÖÐÎ»Æ½¾ùÖµÂË³ý±àÂëÆ÷¶¶¶¯Êý¾Ý£¬5ms¼ÆËãÒ»´ÎËÙ¶È */
-         
-        if (val % SMAPLSE_PID_SPEED == 0)                               /* ½øÐÐÒ»´Îpid¼ÆËã */
+        /* ±àÂëÆ÷ÂË²¨ÓëËÙ¶È¼ÆËã */
+        speed_computer(encode_now, MOTOR_SPEED_CALC_PERIOD_MS);
+        g_motor_data.location = (float)encode_now;
+
+        /* ·ÖÆµ´¥·¢Ë«»· PID ¼ÆËã */
+        if (++val >= SMAPLSE_PID_SPEED)
         {
-            if (g_run_flag)                                             /* ÅÐ¶Ïµç»úÊÇ·ñÆô¶¯ÁË */
-            { 
-                g_motor_data.location = (float)Encode_now;              /* »ñÈ¡µ±Ç°±àÂëÆ÷×Ü¼ÆÊýÖµ£¬ÓÃÓÚÎ»ÖÃ±Õ»·¿ØÖÆ */
-
-                g_motor_data.motor_pwm = increment_pid_ctrl(&g_location_pid, g_motor_data.location);    /* Î»ÖÃ»·PID¿ØÖÆ£¨Íâ»·£© */
-                
-                if ( g_motor_data.motor_pwm > 0)                        /* ÅÐ¶ÏÎ»ÖÃ»·Êä³öÖµÊÇ·ñÎªÕýÊý */
-                {
-                    dcmotor_dir(0);                                     /* Êä³öÎªÕýÊý£¬ÉèÖÃµç»úÕý×ª */
-                }
-                else
-                {
-                    g_motor_data.motor_pwm = -g_motor_data.motor_pwm;   /* Êä³öÎª¸ºÊý£¬È¡·´ */
-                    dcmotor_dir(1);                                     /* ÉèÖÃµç»ú·´×ª */
-                }
-                    
-                if (g_motor_data.motor_pwm >= 120)                      /* ÏÞÖÆÍâ»·Êä³ö£¨Ä¿±êµçÁ÷£© */
-                {
-                    g_motor_data.motor_pwm = 120;
-                }
-                g_current_pid.SetPoint = g_motor_data.motor_pwm;        /* ÉèÖÃÄ¿±êµçÁ÷£¬Íâ»·Êä³ö×÷ÎªÄÚ»·ÊäÈë */
-
-                g_motor_data.motor_pwm = increment_pid_ctrl(&g_current_pid, g_motor_data.current);      /* µçÁ÷»·PID¿ØÖÆ£¨ÄÚ»·£© */
-                
-                if (g_motor_data.motor_pwm >= 8200)                     /* ÏÞÖÆÕ¼¿Õ±È */
-                {
-                    g_motor_data.motor_pwm = 8200;
-                }
-                else if (g_motor_data.motor_pwm <= 0)
-                {
-                    g_motor_data.motor_pwm = 0;
-                }
-
-#if DEBUG_ENABLE  /* ·¢ËÍ»ù±¾²ÎÊý*/
-
-                debug_send_wave_data( 1 ,g_motor_data.location);                                        /* Ñ¡ÔñÍ¨µÀ1£¬·¢ËÍÊµ¼ÊÎ»ÖÃ£¨²¨ÐÎÏÔÊ¾£©*/
-                debug_send_wave_data( 2 ,g_location_pid.SetPoint);                                      /* Ñ¡ÔñÍ¨µÀ2£¬·¢ËÍÄ¿±êÎ»ÖÃ£¨²¨ÐÎÏÔÊ¾£©*/
-#endif
-                dcmotor_speed(g_motor_data.motor_pwm);                                                  /* ÉèÖÃÕ¼¿Õ±È */
-            }
             val = 0;
+            motor_dual_loop_control_step(); /* Ö´ÐÐÎ»ÖÃ+µçÁ÷Ë«»·¿ØÖÆ */
         }
-        val ++;
-     }
+    }
 }
 
 /**

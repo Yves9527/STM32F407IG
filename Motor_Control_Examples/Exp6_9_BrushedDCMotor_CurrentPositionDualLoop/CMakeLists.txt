@@ -43,6 +43,7 @@ add_link_options(
     -Wl,--gc-sections
     --specs=nano.specs
     --specs=nosys.specs
+    -Wl,--no-warn-rwx-segments
 )
 
 # 宏定义 

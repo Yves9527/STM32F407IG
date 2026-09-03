@@ -28,7 +28,14 @@
 
 
 /******************************************************************************************/
-/* 外部接口函数*/
+/* 舵机参数宏定义 */
+#define SERVO_MIN_ANGLE         0.0f        /* 舵机最小角度 0° */
+#define SERVO_MAX_ANGLE         180.0f      /* 舵机最大角度 180° */
+#define SERVO_MIN_PULSE_US      500         /* 0° 对应的比较值/脉宽 (0.5ms = 500us) */
+#define SERVO_MAX_PULSE_US      2500        /* 180° 对应的比较值/脉宽 (2.5ms = 2500us) */
+
+/******************************************************************************************/
+/* 外部接口函数 */
 uint16_t angle_to_tim_val(float angle);                     /* 角度转比较值 */
-uint8_t servo_angle_set(uint8_t id,float angle);            /* 设置角度 */
+uint8_t servo_angle_set(uint8_t id, float angle);           /* 设置角度 */
 #endif

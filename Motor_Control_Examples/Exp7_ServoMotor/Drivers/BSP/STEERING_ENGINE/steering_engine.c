@@ -28,27 +28,25 @@
 extern TIM_HandleTypeDef g_atimx_pwm_chy_handle;      /* 定时器x句柄 */
 
 /**
- * @brief       舵机角度转定时器装载值
- * @param       angle:角度
- * @retval      定时器装载值
+ * @brief       将舵机目标角度转换为定时器比较值 (CCR)
+ * @param       angle: 目标角度 (0.0° ~ 180.0°)
+ * @retval      定时器比较值 (500 ~ 2500 us)，若角度越界则返回 0
  */
 uint16_t angle_to_tim_val(float angle)
 {
-    uint16_t ret;
-    if((angle < 0)||(angle > 180))
+    /* 1. 角度越界校验（卫语句提前退出） */
+    if ((angle < SERVO_MIN_ANGLE) || (angle > SERVO_MAX_ANGLE))
     {
-        ret = 0;
+        return 0;
     }
-    else
-    {
-        /* 0° -- 500，45° -- 1000，90° -- 1500，135° -- 2000，180° -- 2500 */
-        ret = 1500 + (int)((float)((angle - 90) * 100 / 9));      
-        if((ret < 500)||(ret > 2500))
-        {
-            ret = 0;
-        }
-    }
-    return ret;
+
+    /* 2. 线性插值：CCR = 基础脉宽(0°) + (角度 / 180.0°) * 脉宽有效跨度(2000us)
+     *    +0.5f 实现四舍五入转换
+     */
+    float pulse_us = SERVO_MIN_PULSE_US + 
+                     (angle / SERVO_MAX_ANGLE) * (SERVO_MAX_PULSE_US - SERVO_MIN_PULSE_US);
+
+    return (uint16_t)(pulse_us + 0.5f);
 }
 
 /**

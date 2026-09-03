@@ -75,6 +75,8 @@ file(GLOB_RECURSE SYSTEM_SRCS "Drivers/SYSTEM/*.c")
 # 4. BSP 源文件（自动排除被 lcd.c 内部引用的 lcd_ex.c）
 file(GLOB_RECURSE BSP_SRCS "Drivers/BSP/*.c")
 list(FILTER BSP_SRCS EXCLUDE REGEX ".*lcd_ex\\.c$")
+file(GLOB_RECURSE BSP_SRCS "Drivers/BSP/*.c")
+list(FILTER BSP_SRCS EXCLUDE REGEX ".*/(lcd_ex|btim|gtim)\\.c$")
 
 # 5. HAL 库源文件（自动排除冲突的 *_template.c 模板文件）
 file(GLOB_RECURSE HAL_SRCS "Drivers/STM32F4xx_HAL_Driver/Src/*.c")

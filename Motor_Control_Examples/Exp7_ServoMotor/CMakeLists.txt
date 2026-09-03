@@ -26,6 +26,7 @@ endif()
 add_compile_options(
     ${CPU_FLAGS}
     -Wall -Wextra
+    -Wno-unused-parameter
     -fdata-sections -ffunction-sections
     $<$<CONFIG:Debug>:-Og>
     $<$<CONFIG:Debug>:-g>

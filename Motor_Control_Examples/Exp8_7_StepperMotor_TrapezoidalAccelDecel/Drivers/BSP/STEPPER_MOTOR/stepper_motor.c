@@ -1,413 +1,372 @@
 /**
  ****************************************************************************************************
  * @file        stepper_motor.c
- * @author      正点原子团队(ALIENTEK)
- * @version     V1.0
- * @date        2021-10-14
- * @brief       步进电机 驱动代码
- * @license     Copyright (c) 2020-2032, 广州市星翼电子科技有限公司
- ****************************************************************************************************
- * @attention
- *
- * 实验平台:正点原子 F407电机开发板
- * 在线视频:www.yuanzige.com
- * 技术论坛:www.openedv.com
- * 公司网址:www.alientek.com
- * 购买地址:openedv.taobao.com
- *
- * 修改说明
- * V1.0 20211014
- * 第一次发布
- *
+ * @author      正点原子团队(ALIENTEK) / 优化重构版
+ * @version     V2.0
+ * @date        2024-05-10
+ * @brief       步进电机 梯形加减速控制实现
+ * @encoding    GBK / GB2312
  ****************************************************************************************************
  */
- 
+
 #include "./BSP/STEPPER_MOTOR/stepper_motor.h"
 #include "./BSP/TIMER/stepper_tim.h"
-#include "math.h"
+#include <math.h>
+
+/* 全局运动状态及统计 */
+speedRampData g_srd             = {STOP, CW, 0, 0, 0, 0, 0};
+__IO int32_t  g_step_position   = 0;
+__IO uint8_t  g_motion_sta      = 0;
+__IO uint32_t g_add_pulse_count = 0;
+
 /**
- * @brief       初始化步进电机相关IO口, 并使能时钟
- * @param       arr: 自动重装值
- * @param       psc: 时钟预分频数
+ * @brief       初始化步进电机GPIO与定时器输出比较通道
+ * @param       arr: 定时器自动重装载值
+ * @param       psc: 预分频系数
  * @retval      无
  */
 void stepper_init(uint16_t arr, uint16_t psc)
 {
     GPIO_InitTypeDef gpio_init_struct;
 
-    STEPPER_DIR1_GPIO_CLK_ENABLE();                                 /* DIR1时钟使能 */
-    STEPPER_DIR2_GPIO_CLK_ENABLE();                                 /* DIR2时钟使能 */
-    STEPPER_DIR3_GPIO_CLK_ENABLE();                                 /* DIR3时钟使能 */
-    STEPPER_DIR4_GPIO_CLK_ENABLE();                                 /* DIR4时钟使能 */
-            
-    STEPPER_EN1_GPIO_CLK_ENABLE();                                  /* EN1时钟使能 */
-    STEPPER_EN2_GPIO_CLK_ENABLE();                                  /* EN2时钟使能 */
-    STEPPER_EN3_GPIO_CLK_ENABLE();                                  /* EN3时钟使能 */
-    STEPPER_EN4_GPIO_CLK_ENABLE();                                  /* EN4时钟使能 */
-    
+    STEPPER_DIR1_GPIO_CLK_ENABLE();
+    STEPPER_DIR2_GPIO_CLK_ENABLE();
+    STEPPER_DIR3_GPIO_CLK_ENABLE();
+    STEPPER_DIR4_GPIO_CLK_ENABLE();
 
-    gpio_init_struct.Pin = STEPPER_DIR1_GPIO_PIN;                   /* DIR1引脚 */
-    gpio_init_struct.Mode = GPIO_MODE_OUTPUT_PP;                    /* 推挽输出 */
-    gpio_init_struct.Pull = GPIO_PULLDOWN;                          /* 下拉 */
-    gpio_init_struct.Speed = GPIO_SPEED_FREQ_LOW;                   /* 低速 */
-    HAL_GPIO_Init(STEPPER_DIR1_GPIO_PORT, &gpio_init_struct);       /* 初始化DIR1引脚 */
+    STEPPER_EN1_GPIO_CLK_ENABLE();
+    STEPPER_EN2_GPIO_CLK_ENABLE();
+    STEPPER_EN3_GPIO_CLK_ENABLE();
+    STEPPER_EN4_GPIO_CLK_ENABLE();
 
-    gpio_init_struct.Pin = STEPPER_DIR2_GPIO_PIN;                   /* DIR2引脚 */
-    HAL_GPIO_Init(STEPPER_DIR2_GPIO_PORT, &gpio_init_struct);       /* 初始化DIR2引脚 */
+    gpio_init_struct.Mode  = GPIO_MODE_OUTPUT_PP;
+    gpio_init_struct.Pull  = GPIO_PULLDOWN;
+    gpio_init_struct.Speed = GPIO_SPEED_FREQ_LOW;
 
-    gpio_init_struct.Pin = STEPPER_DIR3_GPIO_PIN;                   /* DIR3引脚 */
-    HAL_GPIO_Init(STEPPER_DIR3_GPIO_PORT, &gpio_init_struct);       /* 初始化DIR3引脚 */
+    /* 初始化方向引脚 */
+    gpio_init_struct.Pin = STEPPER_DIR1_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_DIR1_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_DIR2_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_DIR2_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_DIR3_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_DIR3_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_DIR4_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_DIR4_GPIO_PORT, &gpio_init_struct);
 
-    gpio_init_struct.Pin = STEPPER_DIR4_GPIO_PIN;                   /* DIR4引脚 */
-    HAL_GPIO_Init(STEPPER_DIR4_GPIO_PORT, &gpio_init_struct);       /* 初始化DIR4引脚 */
-    
-    /*   脱机引脚初始化   */
-    
-    gpio_init_struct.Pin = STEPPER_EN1_GPIO_PIN;                    /* EN1引脚 */
-    HAL_GPIO_Init(STEPPER_EN1_GPIO_PORT, &gpio_init_struct);        /* 初始化EN1引脚 */
-    
-    gpio_init_struct.Pin = STEPPER_EN2_GPIO_PIN;                    /* EN2引脚 */
-    HAL_GPIO_Init(STEPPER_EN2_GPIO_PORT, &gpio_init_struct);        /* 初始化EN2引脚 */
-    
-    gpio_init_struct.Pin = STEPPER_EN3_GPIO_PIN;                    /* EN3引脚 */
-    HAL_GPIO_Init(STEPPER_EN3_GPIO_PORT, &gpio_init_struct);        /* 初始化EN3引脚 */
-    
-    gpio_init_struct.Pin = STEPPER_EN4_GPIO_PIN;                    /* EN4引脚 */
-    HAL_GPIO_Init(STEPPER_EN4_GPIO_PORT, &gpio_init_struct);        /* 初始化EN4引脚 */
-    
-    atim_timx_oc_chy_init(arr, psc);                                /* 初始化PUL引脚，以及脉冲模式等 */
+    /* 初始化使能引脚 */
+    gpio_init_struct.Pin = STEPPER_EN1_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_EN1_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_EN2_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_EN2_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_EN3_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_EN3_GPIO_PORT, &gpio_init_struct);
+    gpio_init_struct.Pin = STEPPER_EN4_GPIO_PIN;
+    HAL_GPIO_Init(STEPPER_EN4_GPIO_PORT, &gpio_init_struct);
+
+    /* 初始化定时器脉冲输出比较通道 */
+    atim_timx_oc_chy_init(arr, psc);
 }
 
 /**
- * @brief       开启步进电机
- * @param       motor_num: 步进电机接口序号
- * @retval      无
+ * @brief       启动指定通道脉冲
  */
 void stepper_star(uint8_t motor_num)
 {
-    /* 开启对应PWM通道 */
+    uint32_t channel;
     switch(motor_num)
     {
-        case STEPPER_MOTOR_1 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Start(&g_atimx_handle, ATIM_TIMX_PWM_CH1);       
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Start_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH1);    
-            }         
-            break;
-        }
-        case STEPPER_MOTOR_2 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Start(&g_atimx_handle, ATIM_TIMX_PWM_CH2);      
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Start_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH2);     
-            }
-            break;
-        }
-        case STEPPER_MOTOR_3 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Start(&g_atimx_handle, ATIM_TIMX_PWM_CH3);     
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Start_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH3);    
-            }
-            break;  
-        }
-        case STEPPER_MOTOR_4 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Start(&g_atimx_handle, ATIM_TIMX_PWM_CH4);      
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Start_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH4);    
-            }
-            break;
-        }
-        default : break;
+        case STEPPER_MOTOR_1: channel = ATIM_TIMX_PWM_CH1; break;
+        case STEPPER_MOTOR_2: channel = ATIM_TIMX_PWM_CH2; break;
+        case STEPPER_MOTOR_3: channel = ATIM_TIMX_PWM_CH3; break;
+        case STEPPER_MOTOR_4: channel = ATIM_TIMX_PWM_CH4; break;
+        default: return;
+    }
+
+    if (g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1 || g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2)
+    {
+        HAL_TIM_PWM_Start(&g_atimx_handle, channel);
+    }
+    else if (g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
+    {
+        HAL_TIM_OC_Start_IT(&g_atimx_handle, channel);
     }
 }
 
 /**
- * @brief       关闭步进电机
- * @param       motor_num: 步进电机接口序号
- * @retval      无
+ * @brief       停止指定通道脉冲
  */
 void stepper_stop(uint8_t motor_num)
 {
-    /* 关闭对应PWM通道 */
+    uint32_t channel;
     switch(motor_num)
     {
-        case STEPPER_MOTOR_1 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Stop(&g_atimx_handle, ATIM_TIMX_PWM_CH1);       
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Stop_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH1);    
-            }
-            break;
-        }
-        case STEPPER_MOTOR_2 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Stop(&g_atimx_handle, ATIM_TIMX_PWM_CH2);       
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Stop_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH2);    
-            }
-            break;
-        }
-        case STEPPER_MOTOR_3 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Stop(&g_atimx_handle, ATIM_TIMX_PWM_CH3);      
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Stop_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH3);   
-            }
-            break;  
-        }
-        case STEPPER_MOTOR_4 :
-        {
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1||g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2) 
-            {
-                HAL_TIM_PWM_Stop(&g_atimx_handle, ATIM_TIMX_PWM_CH4);       
-            }
-            if(g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
-            {
-                HAL_TIM_OC_Stop_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH4);   
-            }
-            break;
-        }
-        default : break;
+        case STEPPER_MOTOR_1: channel = ATIM_TIMX_PWM_CH1; break;
+        case STEPPER_MOTOR_2: channel = ATIM_TIMX_PWM_CH2; break;
+        case STEPPER_MOTOR_3: channel = ATIM_TIMX_PWM_CH3; break;
+        case STEPPER_MOTOR_4: channel = ATIM_TIMX_PWM_CH4; break;
+        default: return;
+    }
+
+    if (g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM1 || g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_PWM2)
+    {
+        HAL_TIM_PWM_Stop(&g_atimx_handle, channel);
+    }
+    else if (g_atimx_oc_chy_handle.OCMode == TIM_OCMODE_TOGGLE)
+    {
+        HAL_TIM_OC_Stop_IT(&g_atimx_handle, channel);
     }
 }
 
-
-/********************************************梯形加减速***********************************************/
-speedRampData g_srd               = {STOP,CW,0,0,0,0,0};  /* 加减速变量 */
-__IO int32_t  g_step_position     = 0;                    /* 当前位置 */
-__IO uint8_t  g_motion_sta        = 0;                    /* 是否在运动？0：停止，1：运动 */
-__IO uint32_t g_add_pulse_count   = 0;                    /* 脉冲个数累计 */
-
-/*
- * @brief       生成梯形运动控制参数
- * @param       step：移动的步数 (正数为顺时针，负数为逆时针).
- * @param       accel  加速度,实际值为accel*0.1*rad/sec^2  10倍并且2个脉冲算一个完整的周期
- * @param       decel  减速度,实际值为decel*0.1*rad/sec^2
- * @param       speed  最大速度,实际值为speed*0.1*rad/sec
+/**
+ * @brief       梯形/三角形加减速轨迹规划器并启动运行
+ * @param       step:  目标总步数 (正数: 顺时针 CW, 负数: 逆时针 CCW)
+ * @param       accel: 加速度 (单位: 0.1 rad/s^2)
+ * @param       decel: 减速度 (单位: 0.1 rad/s^2)
+ * @param       speed: 最大巡航速度 (单位: 0.1 rad/s)
  * @retval      无
  */
 void create_t_ctrl_param(int32_t step, uint32_t accel, uint32_t decel, uint32_t speed)
 {
-    __IO uint16_t tim_count;        /* 达到最大速度时的步数*/
-    __IO uint32_t max_s_lim;        /* 必须要开始减速的步数（如果加速没有达到最大速度）*/
-    __IO uint32_t accel_lim;
-    if(g_motion_sta != STOP)        /* 只允许步进电机在停止的时候才继续*/
+    uint32_t max_speed_steps; /* 加速到最大期望速度所需的理论步数 */
+    uint32_t accel_limit;     /* 总步数约束下允许加速的最大步数 (三角形交点) */
+    uint16_t tim_count;
+
+    /* 若电机当前正在运动中，则忽略新指令 */
+    if (g_motion_sta != STOP)
+    {
         return;
-    if(step < 0)                    /* 步数为负数 */
-    {   
-        g_srd.dir = CCW;            /* 逆时针方向旋转 */
+    }
+
+    /* 1. 确定方向并设置方向引脚电平 */
+    if (step < 0)
+    {
+        g_srd.dir = CCW;
         ST3_DIR(CCW);
-        step = -step;               /* 获取步数绝对值 */
+        step = -step; /* 转为正数进行统一的几何曲线规划 */
     }
     else
     {
-        g_srd.dir = CW;             /* 顺时针方向旋转 */
+        g_srd.dir = CW;
         ST3_DIR(CW);
     }
 
-    if(step == 1)                   /* 步数为1 */
+    /* 2. 边界情况处理 */
+    if (step == 0)
     {
-        g_srd.accel_count = -1;     /* 只移动一步 */
-        g_srd.run_state = DECEL;    /* 减速状态. */
-        g_srd.step_delay = 1000;    /* 默认速度 */
+        return;
     }
-    else if(step != 0)              /* 如果目标运动步数不为0*/
+    else if (step == 1)
     {
-        /*设置最大速度极限, 计算得到min_delay用于定时器的计数器的值 min_delay = (alpha / t)/ w*/
-        g_srd.min_delay = (int32_t)(A_T_x10 /speed); //匀速运行时的计数值
+        /* 仅走 1 步：直接以单步脉冲处理 */
+        g_srd.accel_count = -1;
+        g_srd.run_state   = DECEL;
+        g_srd.step_delay  = 1000;
+        g_srd.decel_val   = -1;
+        g_srd.decel_start = 1;
+    }
+    else
+    {
+        /* 3. 计算设定最高速度对应的最小定时器周期 min_delay
+         * min_delay = (alpha * ft) / omega_max
+         */
+        g_srd.min_delay = (int32_t)(COEFF_MIN_DELAY / speed);
 
-        /* 通过计算第一个(c0) 的步进延时来设定加速度，其中accel单位为0.1rad/sec^2
-         step_delay = 1/tt * sqrt(2*alpha/accel)
-         step_delay = ( tfreq*0.69/10 )*10 * sqrt( (2*alpha*100000) / (accel*10) )/100 */
-        
-        g_srd.step_delay = (int32_t)((T1_FREQ_148 * sqrt(A_SQ / accel))/10); /* c0 */
+        /* 4. 计算起步第 0 步的定时器周期 c0 (初速度)
+         * c0 = 0.676 * ft * sqrt(2 * alpha / a)
+         */
+        g_srd.step_delay = (int32_t)((COEFF_C0_FREQ * sqrt(COEFF_C0_RADIAN / accel)) / 10.0f);
 
-        max_s_lim = (uint32_t)(speed*speed / (A_x200*accel/10));/* 计算多少步之后达到最大速度的限制 max_s_lim = speed^2 / (2*alpha*accel) */
-
-        if(max_s_lim == 0)                                      /* 如果达到最大速度小于0.5步，我们将四舍五入为0,但实际我们必须移动至少一步才能达到想要的速度 */
+        /* 5. 计算加速到设定最高速度所需要的步数 n_max
+         * 运动学公式: omega^2 = 2 * a * theta = 2 * a * (n * alpha)
+         * 推出: n_max = omega^2 / (2 * alpha * a)
+         */
+        max_speed_steps = (uint32_t)((speed * speed) / (COEFF_MAX_STEPS * accel / 10.0f));
+        if (max_speed_steps == 0)
         {
-            max_s_lim = 1;
+            max_speed_steps = 1;
         }
-        accel_lim = (uint32_t)(step*decel/(accel+decel));       /* 这里不限制最大速度 计算多少步之后我们必须开始减速 n1 = (n1+n2)decel / (accel + decel) */
 
-        if(accel_lim == 0)                                      /* 不足一步 按一步处理*/
+        /* 6. 在有限总步数 step 的限制下，计算能加速的最大步数 accel_limit (三角形加减速交点)
+         * 依据 加速距离 : 减速距离 = 减速度 : 加速度
+         * n_accel = step * (decel / (accel + decel))
+         */
+        accel_limit = (uint32_t)(step * decel / (accel + decel));
+        if (accel_limit == 0)
         {
-            accel_lim = 1;
+            accel_limit = 1;
         }
-        if(accel_lim <= max_s_lim)                              /* 加速阶段到不了最大速度就得减速。。。使用限制条件我们可以计算出减速阶段步数 */
+
+        /* 7. 轨迹形态判决：是【梯形】还是【三角形】？ */
+        if (accel_limit <= max_speed_steps)
         {
-            g_srd.decel_val = accel_lim - step;                 /* 减速段的步数 */
+            /* 【三角形加减速】：步数不够，未达到最高速就必须刹车
+             * 减速段步数 = step - accel_limit
+             * 存入 decel_val 的值为负数: -(step - accel_limit) = accel_limit - step
+             */
+            g_srd.decel_val = (int32_t)(accel_limit - step);
         }
         else
         {
-            g_srd.decel_val = -(max_s_lim*accel/decel);         /* 减速段的步数 */
+            /* 【梯形加减速】：能加速到最高速度，有一段匀速巡航
+             * 减速段步数 = max_speed_steps * (accel / decel)
+             * 同样存为负数形式
+             */
+            g_srd.decel_val = -(int32_t)(max_speed_steps * accel / decel);
         }
-        if(g_srd.decel_val == 0)                                /* 不足一步 按一步处理 */
+
+        if (g_srd.decel_val == 0)
         {
             g_srd.decel_val = -1;
         }
-        g_srd.decel_start = step + g_srd.decel_val;             /* 计算开始减速时的步数 */
-        
-        
-        if(g_srd.step_delay <= g_srd.min_delay)                 /* 如果一开始c0的速度比匀速段速度还大，就不需要进行加速运动，直接进入匀速 */
+
+        /* 计算刹车减速的起点位置 (注意 decel_val 本身是负数):
+         * decel_start = 总步数 - 减速步数 = step + decel_val
+         */
+        g_srd.decel_start = step + g_srd.decel_val;
+
+        /* 8. 检查初速度是否已经大于等于最高速度设定 */
+        if (g_srd.step_delay <= g_srd.min_delay)
         {
             g_srd.step_delay = g_srd.min_delay;
-            g_srd.run_state = RUN;
+            g_srd.run_state  = RUN;   /* 周期已达极小值，直接进入匀速 */
         }
-        else  
+        else
         {
-            g_srd.run_state = ACCEL;
+            g_srd.run_state  = ACCEL; /* 进入加速状态 */
         }
-        g_srd.accel_count = 0;                                  /* 复位加减速计数值 */
+
+        g_srd.accel_count = 0;       /* 加速计数值复位从 0 开始 */
     }
-    g_motion_sta = 1;                                           /* 电机为运动状态 */
+
+    /* 9. 开启驱动器使能，装载定时器翻转比较值，启动中断 */
+    g_motion_sta = 1;
     ST3_EN(EN_ON);
-    tim_count=__HAL_TIM_GET_COUNTER(&g_atimx_handle);
-    __HAL_TIM_SET_COMPARE(&g_atimx_handle,ATIM_TIMX_PWM_CH3,tim_count+g_srd.step_delay/2);  /* 设置定时器比较值 */
-    HAL_TIM_OC_Start_IT(&g_atimx_handle,ATIM_TIMX_PWM_CH3);                                 /* 使能定时器通道 */
+
+    tim_count = __HAL_TIM_GET_COUNTER(&g_atimx_handle);
+    /* 定时器使用 Toggle 模式，翻转两次为 1 个完整周期，因此半周期比较值为 step_delay / 2 */
+    __HAL_TIM_SET_COMPARE(&g_atimx_handle, ATIM_TIMX_PWM_CH3, tim_count + g_srd.step_delay / 2);
+    HAL_TIM_OC_Start_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH3);
 }
 
 /**
-  * @brief  定时器比较中断
-  * @param  htim：定时器句柄指针
-  * @note   无
-  * @retval 无
-  */
+ * @brief       定时器输出比较中断回调 (加减速算法的实时执行引擎)
+ * @param       htim: 定时器句柄
+ * @retval      无
+ */
 void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim)
 {
- 
-    __IO uint32_t tim_count = 0;
-    __IO uint32_t tmp = 0;
-    uint16_t new_step_delay = 0;                            /* 保存新（下）一个延时周期 */
-    __IO static uint16_t last_accel_delay = 0;              /* 加速过程中最后一次延时（脉冲周期） */
-    __IO static uint32_t step_count = 0;                    /* 总移动步数计数器*/
-    __IO static int32_t rest = 0;                           /* 记录new_step_delay中的余数，提高下一步计算的精度 */
-    __IO static uint8_t i = 0;                              /* 定时器使用翻转模式，需要进入两次中断才输出一个完整脉冲 */
+    uint32_t tim_count;
+    uint32_t next_compare_val;
+    uint16_t new_step_delay;
+    static uint16_t last_accel_delay  = 0; /* 保存加速结束时的周期，用于减速段首步衔接 */
+    static uint32_t step_count        = 0; /* 当前总已走步数累计器 */
+    static int32_t  rest              = 0; /* AVR446 整数除法余数累加器 (消除累积时基截断误差) */
+    static uint8_t  toggle_half_pulse = 0; /* 翻转计数器：0-前半周期，1-后半周期 */
 
-    if(htim->Instance==TIM8)
+    if (htim->Instance == TIM8)
     {
-       
+        /* 1. 动态装载下一个半周期的定时器比较值 */
         tim_count = __HAL_TIM_GET_COUNTER(&g_atimx_handle);
-        tmp = tim_count + g_srd.step_delay/2;               /* 整个C值里边是需要翻转两次的所以需要除以2 */
-        __HAL_TIM_SET_COMPARE(&g_atimx_handle,ATIM_TIMX_PWM_CH3,tmp);
+        next_compare_val = tim_count + (g_srd.step_delay / 2);
+        __HAL_TIM_SET_COMPARE(&g_atimx_handle, ATIM_TIMX_PWM_CH3, next_compare_val);
 
-        i++;                                                /* 定时器中断次数计数值 */
-        if(i == 2)                                          /* 2次，说明已经输出一个完整脉冲 */
+        /* 2. Toggle 翻转模式下：每 2 次中断才构成 1 个完整步进脉冲 */
+        toggle_half_pulse++;
+        if (toggle_half_pulse < 2)
         {
-            i = 0;                                          /* 清零定时器中断次数计数值 */
-            switch(g_srd.run_state)                         /* 加减速曲线阶段 */
-            {
+            return; /* 仅完成了半周期的电平翻转，返回等待下一个边沿 */
+        }
+        toggle_half_pulse = 0; /* 走完一个完整步进脉冲，重置半周期标志 */
+
+        /* 3. 加减速状态机处理 */
+        switch (g_srd.run_state)
+        {
             case STOP:
-                step_count = 0;                             /* 清零步数计数器 */
-                rest = 0;                                   /* 清零余值 */
-                /* 关闭通道*/
+            {
+                /* 运动到站完成，关闭中断与使能 */
+                step_count = 0;
+                rest       = 0;
                 HAL_TIM_OC_Stop_IT(&g_atimx_handle, ATIM_TIMX_PWM_CH3);
                 ST3_EN(EN_OFF);
-                g_motion_sta = 0;                           /* 电机为停止状态  */
-                break;
+                g_motion_sta = 0;
+                return;
+            }
 
             case ACCEL:
-                g_add_pulse_count++;                        /* 只用于记录相对位置转动了多少度 */
-                step_count++;                               /* 步数加1*/
-                if(g_srd.dir == CW)
+            {
+                step_count++;
+                g_add_pulse_count++;
+                g_step_position += (g_srd.dir == CW) ? 1 : -1;
+                g_srd.accel_count++;
+
+                /* David Austin 一阶泰勒逼近递推公式:
+                 * c_n = c_(n-1) - (2 * c_(n-1) + rest) / (4n + 1)
+                 */
+                new_step_delay = g_srd.step_delay - (((2 * g_srd.step_delay) + rest) / (4 * g_srd.accel_count + 1));
+                rest           = ((2 * g_srd.step_delay) + rest) % (4 * g_srd.accel_count + 1);
+
+                /* 判定 1：是否到达减速起点 (适用于三角形曲线：步数不足以达到最高速提前刹车) */
+                if (step_count >= g_srd.decel_start)
                 {
-                    g_step_position++;                      /* 绝对位置加1  记录绝对位置转动多少度*/
+                    g_srd.accel_count = g_srd.decel_val; /* 置为负数，进入对称减速阶段 */
+                    g_srd.run_state   = DECEL;
                 }
-                else
+                /* 判定 2：是否达到最高速度 */
+                else if (new_step_delay <= g_srd.min_delay)
                 {
-                    g_step_position--;                      /* 绝对位置减1*/
-                }
-                g_srd.accel_count++;                        /* 加速计数值加1*/
-                new_step_delay = g_srd.step_delay - (((2 *g_srd.step_delay) + rest)/(4 * g_srd.accel_count + 1));/* 计算新(下)一步脉冲周期(时间间隔) */
-                rest = ((2 * g_srd.step_delay)+rest)%(4 * g_srd.accel_count + 1);                                /* 计算余数，下次计算补上余数，减少误差 */
-                if(step_count >= g_srd.decel_start)         /* 检查是否到了需要减速的步数 */
-                {
-                    g_srd.accel_count = g_srd.decel_val;    /* 加速计数值为减速阶段计数值的初始值 */
-                    g_srd.run_state = DECEL;                /* 下个脉冲进入减速阶段 */
-                }
-                else if(new_step_delay <= g_srd.min_delay)  /* 检查是否到达期望的最大速度 计数值越小速度越快，当你的速度和最大速度相等或更快就进入匀速*/
-                {
-                    last_accel_delay = new_step_delay;      /* 保存加速过程中最后一次延时（脉冲周期）*/
-                    new_step_delay = g_srd.min_delay;       /* 使用min_delay（对应最大速度speed）*/
-                    rest = 0;                               /* 清零余值 */
-                    g_srd.run_state = RUN;                  /* 设置为匀速运行状态 */
+                    last_accel_delay = new_step_delay;
+                    new_step_delay   = g_srd.min_delay; /* 钳位在最大转速 */
+                    rest             = 0;
+                    g_srd.run_state  = RUN;             /* 切换至匀速巡航段 */
                 }
                 break;
+            }
 
             case RUN:
+            {
+                step_count++;
                 g_add_pulse_count++;
-                step_count++;                               /* 步数加1 */
-                if(g_srd.dir == CW)
+                g_step_position += (g_srd.dir == CW) ? 1 : -1;
+
+                new_step_delay = g_srd.min_delay;       /* 匀速段脉冲周期恒定 */
+
+                /* 判定：到达减速刹车起点 */
+                if (step_count >= g_srd.decel_start)
                 {
-                    g_step_position++;                      /* 绝对位置加1 */
-                }
-                else
-                {
-                    g_step_position--;                      /* 绝对位置减1*/
-                }
-                new_step_delay = g_srd.min_delay;           /* 使用min_delay（对应最大速度speed）*/
-                if(step_count >= g_srd.decel_start)         /* 需要开始减速 */
-                {
-                    g_srd.accel_count = g_srd.decel_val;    /* 减速步数做为加速计数值 */
-                    new_step_delay = last_accel_delay;      /* 加阶段最后的延时做为减速阶段的起始延时(脉冲周期) */
-                    g_srd.run_state = DECEL;                /* 状态改变为减速 */
+                    g_srd.accel_count = g_srd.decel_val; /* 置为负数，开始减速 */
+                    new_step_delay    = last_accel_delay;
+                    g_srd.run_state   = DECEL;
                 }
                 break;
+            }
 
             case DECEL:
-                step_count++;                               /* 步数加1 */
+            {
+                step_count++;
                 g_add_pulse_count++;
-                if(g_srd.dir == CW)
-                {
-                    g_step_position++;                      /* 绝对位置加1 */
-                }
-                else
-                {
-                    g_step_position--;                      /* 绝对位置减1 */
-                }
+                g_step_position += (g_srd.dir == CW) ? 1 : -1;
                 g_srd.accel_count++;
-                new_step_delay = g_srd.step_delay - (((2 * g_srd.step_delay) + rest)/(4 * g_srd.accel_count + 1));  /* 计算新(下)一步脉冲周期(时间间隔) */
-                rest = ((2 * g_srd.step_delay)+rest)%(4 * g_srd.accel_count + 1);                                   /* 计算余数，下次计算补上余数，减少误差 */
 
-                /* 检查是否为最后一步 */
-                if(g_srd.accel_count >= 0)                  /* 判断减速步数是否从负值加到0是的话 减速完成 */
+                /* 关键数学技巧：
+                 * 此时 accel_count 是负数，因此分母 (4n+1) 为负数！
+                 * 减去一个负数等于加上一个正数，使得 new_step_delay 逐级递增，电机实现平滑减速！
+                 */
+                new_step_delay = g_srd.step_delay - (((2 * g_srd.step_delay) + rest) / (4 * g_srd.accel_count + 1));
+                rest           = ((2 * g_srd.step_delay) + rest) % (4 * g_srd.accel_count + 1);
+
+                /* 当 accel_count 递增到 0 时，说明减速步数正好耗尽，精准到达目标终点 */
+                if (g_srd.accel_count >= 0)
                 {
                     g_srd.run_state = STOP;
                 }
                 break;
             }
-            g_srd.step_delay = new_step_delay;              /* 为下个(新的)延时(脉冲周期)赋值 */
+
+            default:
+                break;
         }
+
+        /* 4. 更新下一个步进脉冲的周期基准 */
+        g_srd.step_delay = new_step_delay;
     }
 }
